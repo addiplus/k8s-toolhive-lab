@@ -44,3 +44,29 @@ reconstructed after the fact; entries are appended as the work happens.
   `docs/TOOLHIVE_RESEARCH.md`. Decisive finding: the operator's MCPServer CR cannot
   run `npx://` (CLI-only); the supported bridge is `thv build npx://<pkg>` ->
   `kind load docker-image` -> plain image reference in the CR.
+- **Phase 3a done.** Operator v0.41.0 via Helm 4 (OCI charts, no fallback needed),
+  14 CRDs. `thv build` produced a multi-stage node:24-alpine image (non-root, npx
+  entrypoint) for `@addiplus/vercel-deployment-mcp`; kind load; dummy-token Secret;
+  MCPServer CR -> phase Ready. Operator created proxy Deployment + StatefulSet
+  (`vercel-deployment-0`) + Service `mcp-vercel-deployment-proxy`. Transcript:
+  `transcripts/03-toolhive-operator.txt`.
+- **Phase 3b done - the centerpiece receipt.** Through port-forward: `/health` ok;
+  `initialize` 200 (SSE-framed, Mcp-Session-Id issued, protocolVersion 2025-06-18
+  echoed); `notifications/initialized` 202; `tools/list` returned all four real
+  tools; `tools/call list_projects` with the dummy token returned Vercel HTTP 403
+  as a structured MCP isError result, proving every hop: curl -> port-forward ->
+  proxy Service -> proxy pod -> SPDY stdio attach -> server -> Vercel API -> back.
+  Transcript: `transcripts/04-mcp-handshake.txt`. Noted for my own repo: the
+  server reports serverInfo.version 0.1.0 while the npm package is 0.2.0.
+- **Stretch done.** Second MCPServer (`toolhive-docs`, registry image,
+  streamable-http, /tmp emptyDir pattern) Ready alongside the first; two proxy
+  Services; tools/list answered by the second server too. Transcript:
+  `transcripts/05-stretch-two-servers.txt`.
+- **No upstream ToolHive issues encountered** on Windows worth filing: Helm 4
+  worked, the operator ran a locally-built npx-bridged image cleanly, and bug
+  #2920 (status URL /sse vs /mcp) did not reproduce. Nothing needs a candidate
+  issue write-up.
+- **Session close-out:** README written, transcripts scrub-checked (only the
+  deliberate dummy token value appears), repo published to
+  github.com/addiplus/k8s-toolhive-lab per the pre-approved publish step.
+  RECEIPT_DRAFT.md left in the folder, uncommitted, for the campaign ledger.

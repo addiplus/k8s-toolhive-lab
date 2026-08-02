@@ -1,5 +1,7 @@
 # local tool binaries (downloaded during the lab, not repo content)
 bin/
+# campaign-ledger draft: stays local, never part of the public receipt repo
+RECEIPT_DRAFT.md
 # live kubeconfig (contains cluster client keys - regenerated per cluster)
 .kube/
 *.zip

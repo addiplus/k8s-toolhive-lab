@@ -1,0 +1,71 @@
+
+# === PHASE 3b: MCP initialize handshake against the operator-run server ===
+
+# --- port-forward the proxy Service (naming convention: mcp-<name>-proxy) ---
+NAME                          TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+mcp-vercel-deployment-proxy   ClusterIP   10.96.193.85   <none>        8080/TCP   4m51s
+(port-forward backgrounded, pid 1869436)
+
+# --- health endpoint first ---
+$ curl -sS --retry 20 --retry-delay 1 --retry-connrefused http://localhost:18090/health
+{"status":"healthy","timestamp":"2026-08-02T12:13:25.83751893Z","version":{"version":"v0.41.0","commit":"d72230424efbafd89fb5faf1934126e266b439ae","build_date":"","go_version":"go1.26.5","platform":"linux/amd64"},"transport":"streamable-http"}
+
+
+# --- STEP 1: initialize (headers and body captured separately) ---
+$ curl -X POST http://localhost:18090/mcp -d '{initialize, protocolVersion: 2025-06-18, clientInfo: k8s-toolhive-lab-probe}'
+--- response headers ---
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Connection: keep-alive
+Content-Type: text/event-stream
+Mcp-Session-Id: dc161392-d1e0-48a1-b32d-fd7b8857cd3a
+Date: Sun, 02 Aug 2026 12:13:28 GMT
+Transfer-Encoding: chunked
+
+--- response body ---
+event: message
+data: {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"tools":{"listChanged":true}},"protocolVersion":"2025-06-18","serverInfo":{"name":"vercel-deployment-mcp","version":"0.1.0"}}}
+
+
+
+# negotiated: protocolVersion=[2025-06-18] session=[dc161392-d1e0-48a1-b32d-fd7b8857cd3a]
+
+# --- STEP 2: notifications/initialized (expect 202) ---
+HTTP/1.1 202 Accepted
+Date: Sun, 02 Aug 2026 12:13:59 GMT
+Content-Length: 0
+
+
+
+# --- STEP 3: tools/list - the server's real tool inventory ---
+{
+  "name": "list_projects",
+  "description": "List projects visible to the configured account or team. Optional text search and result limit."
+}
+{
+  "name": "get_project",
+  "description": "Fetch one project by ID or name."
+}
+{
+  "name": "list_deployments",
+  "description": "List recent deployments, optionally filtered by project ID and state (e.g. BUILDING, ERROR, READY)."
+}
+{
+  "name": "get_deployment",
+  "description": "Fetch one deployment by ID or URL, including its current state."
+}
+
+# --- STEP 4: call a tool WITH THE DUMMY TOKEN - expecting a Vercel auth error,
+
+#     which itself proves the full path: HTTP -> proxy -> stdio -> server -> Vercel API ---
+{
+  "content": [
+    {
+      "text": "Vercel API error (HTTP 403, forbidden): Not authorized. Check that the configured credential is valid and has access to this project or team.",
+      "type": "text"
+    }
+  ],
+  "isError": true
+}
+
+# === PHASE 3b COMPLETE ===

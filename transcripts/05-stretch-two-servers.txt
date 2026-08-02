@@ -1,0 +1,37 @@
+
+# === STRETCH: second MCPServer - two isolated servers, one operator ===
+
+$ kubectl apply -f manifests/31-docs-mcpserver.yaml
+mcpserver.toolhive.stacklok.dev/toolhive-docs created
+mcpserver.toolhive.stacklok.dev/toolhive-docs condition met
+
+$ kubectl get mcpservers -n toolhive-system
+NAME                STATUS   READY   REPLICAS   URL                                                                             AGE
+toolhive-docs       Ready    True    1          http://mcp-toolhive-docs-proxy.toolhive-system.svc.cluster.local:8080/mcp       30s
+vercel-deployment   Ready    True    1          http://mcp-vercel-deployment-proxy.toolhive-system.svc.cluster.local:8080/mcp   8m16s
+
+$ kubectl get pods,services -n toolhive-system
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/toolhive-docs-0                      1/1     Running   0          34s
+pod/toolhive-docs-88c6959db-9k6rs        1/1     Running   0          36s
+pod/toolhive-operator-d489499f9-w9h6w    1/1     Running   0          9m42s
+pod/vercel-deployment-0                  1/1     Running   0          8m17s
+pod/vercel-deployment-6558cf8854-4htgj   1/1     Running   0          8m22s
+
+NAME                                  TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/mcp-toolhive-docs             ClusterIP   10.96.70.179   <none>        8080/TCP   34s
+service/mcp-toolhive-docs-headless    ClusterIP   None           <none>        8080/TCP   34s
+service/mcp-toolhive-docs-proxy       ClusterIP   10.96.181.28   <none>        8080/TCP   36s
+service/mcp-vercel-deployment-proxy   ClusterIP   10.96.193.85   <none>        8080/TCP   8m21s
+
+# Two MCPServers, two proxy Services, isolated pods - the multi-server operating model.
+
+# tools/list against the SECOND server (docs server, streamable-http end to end):
+$ kubectl port-forward service/mcp-toolhive-docs-proxy 18091:8080 (backgrounded)
+{"status":"healthy","timestamp":"2026-08-02T12:17:00.900813917Z","version":{"version":"v0.41.0","commit":"d72230424efbafd89fb5faf1934126e266b439ae","build_date":"","go_version":"go1.26.5","platform":"linux/amd64"},"transport":"streamable-http","mcp":{"available":true,"response_time_ms":2,"last_checked":"2026-08-02T12:17:00.900822534Z"}}
+
+session: [7f4ea44d6d9e47b085c429e0aa054ab3]
+query_docs
+get_chunk
+
+# === STRETCH COMPLETE ===
