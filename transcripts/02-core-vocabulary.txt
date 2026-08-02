@@ -1,0 +1,281 @@
+
+# === PHASE 2: core vocabulary against the live cluster ===
+
+# --- Namespaces: the isolation boundary for names and objects ---
+
+$ kubectl apply -f manifests/00-namespaces.yaml
+namespace/lab created
+namespace/lab-b created
+
+$ kubectl get namespaces
+NAME                 STATUS   AGE
+default              Active   8m2s
+kube-node-lease      Active   8m2s
+kube-public          Active   8m2s
+kube-system          Active   8m3s
+lab                  Active   4s
+lab-b                Active   4s
+local-path-storage   Active   7m55s
+
+# --- ConfigMap + Secret objects first (the Deployment mounts them) ---
+
+$ kubectl apply -f manifests/10-nginx-configmap.yaml
+configmap/nginx-index created
+
+$ kubectl apply -f manifests/14-demo-secret.yaml
+secret/demo-credentials created
+secret/demo-credentials-copy created
+
+# Secrets are namespace-scoped: same value had to be created TWICE (lab and lab-b)
+
+# because a pod can only reference Secrets in its own namespace.
+
+$ kubectl get secret -n lab demo-credentials -o yaml
+apiVersion: v1
+data:
+  DEMO_API_KEY: bm90LWEtcmVhbC1rZXktanVzdC1wbHVtYmluZw==
+kind: Secret
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Secret","metadata":{"annotations":{},"name":"demo-credentials","namespace":"lab"},"stringData":{"DEMO_API_KEY":"not-a-real-key-just-plumbing"},"type":"Opaque"}
+  creationTimestamp: "2026-08-02T11:54:53Z"
+  name: demo-credentials
+  namespace: lab
+  resourceVersion: "1173"
+  uid: 79b9434a-4648-41bf-b2fe-8129fa0610f7
+type: Opaque
+
+# --- Deployment -> ReplicaSet -> Pod: the ownership chain ---
+
+$ kubectl apply -f manifests/11-nginx-deployment.yaml
+deployment.apps/nginx created
+
+$ kubectl rollout status deployment/nginx -n lab --timeout=180s
+Waiting for deployment "nginx" rollout to finish: 0 of 1 updated replicas are available...
+deployment "nginx" successfully rolled out
+
+$ kubectl get deployments,replicasets,pods -n lab -o wide --show-labels
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES              SELECTOR    LABELS
+deployment.apps/nginx   1/1     1            1           5s    nginx        nginx:1.29-alpine   app=nginx   app=nginx
+
+NAME                               DESIRED   CURRENT   READY   AGE   CONTAINERS   IMAGES              SELECTOR                                 LABELS
+replicaset.apps/nginx-6d87b45d7f   1         1         1       5s    nginx        nginx:1.29-alpine   app=nginx,pod-template-hash=6d87b45d7f   app=nginx,pod-template-hash=6d87b45d7f
+
+NAME                         READY   STATUS    RESTARTS   AGE   IP           NODE                         NOMINATED NODE   READINESS GATES   LABELS
+pod/nginx-6d87b45d7f-jlbwf   1/1     Running   0          5s    10.244.0.5   toolhive-lab-control-plane   <none>           <none>            app=nginx,pod-template-hash=6d87b45d7f
+
+# --- Pod vs container: the node's container runtime sees MORE than kubectl ---
+
+# kubectl shows the pod; crictl inside the kind node shows the actual containers
+
+# (including the 'pause' sandbox container that holds the pod's network namespace).
+
+$ docker exec toolhive-lab-control-plane crictl pods --name nginx
+POD ID              CREATED             STATE               NAME                     NAMESPACE           ATTEMPT             RUNTIME
+c541329e6b7d9       10 seconds ago      Ready               nginx-6d87b45d7f-jlbwf   lab                 0                   (default)
+
+$ docker exec toolhive-lab-control-plane crictl ps --name nginx
+CONTAINER           IMAGE               CREATED             STATE               NAME                ATTEMPT             POD ID              POD                      NAMESPACE
+f037a865cca14       812d47f806db4       11 seconds ago      Running             nginx               0                   c541329e6b7d9       nginx-6d87b45d7f-jlbwf   lab
+
+# --- Self-healing: delete a pod, the ReplicaSet replaces it ---
+
+# victim pod: nginx-6d87b45d7f-jlbwf
+
+$ kubectl delete pod nginx-6d87b45d7f-jlbwf -n lab --wait=false
+pod "nginx-6d87b45d7f-jlbwf" deleted from lab namespace
+
+$ kubectl get pods -n lab
+NAME                     READY   STATUS    RESTARTS   AGE
+nginx-6d87b45d7f-b8lm8   1/1     Running   0          3s
+
+$ kubectl wait --for=condition=Ready pod -l app=nginx -n lab --timeout=120s
+pod/nginx-6d87b45d7f-b8lm8 condition met
+
+$ kubectl get pods -n lab
+NAME                     READY   STATUS    RESTARTS   AGE
+nginx-6d87b45d7f-b8lm8   1/1     Running   0          11s
+
+# Same labels, NEW pod name/IP - identity lives in the Service, not the pod.
+
+# --- Scale: one field change, the controller does the rest ---
+
+$ kubectl scale deployment/nginx -n lab --replicas=3
+deployment.apps/nginx scaled
+
+$ kubectl rollout status deployment/nginx -n lab --timeout=180s
+deployment "nginx" successfully rolled out
+
+$ kubectl get pods -n lab -o wide
+NAME                     READY   STATUS    RESTARTS   AGE   IP           NODE                         NOMINATED NODE   READINESS GATES
+nginx-6d87b45d7f-b2r75   1/1     Running   0          8s    10.244.0.7   toolhive-lab-control-plane   <none>           <none>
+nginx-6d87b45d7f-b8lm8   1/1     Running   0          22s   10.244.0.6   toolhive-lab-control-plane   <none>           <none>
+nginx-6d87b45d7f-nh959   1/1     Running   0          8s    10.244.0.8   toolhive-lab-control-plane   <none>           <none>
+
+# --- Services: ClusterIP (in-cluster) vs NodePort (on the node) ---
+
+$ kubectl apply -f manifests/12-nginx-service-clusterip.yaml
+service/nginx created
+
+$ kubectl apply -f manifests/13-nginx-service-nodeport.yaml
+service/nginx-nodeport created
+
+$ kubectl get services -n lab
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+nginx            ClusterIP   10.96.102.43    <none>        80/TCP         6s
+nginx-nodeport   NodePort    10.96.211.247   <none>        80:30080/TCP   3s
+
+$ kubectl get endpointslices -n lab
+NAME                   ADDRESSTYPE   PORTS   ENDPOINTS                          AGE
+nginx-kmsmv            IPv4          80      10.244.0.7,10.244.0.6,10.244.0.8   10s
+nginx-nodeport-k6mzr   IPv4          80      10.244.0.7,10.244.0.6,10.244.0.8   7s
+
+# The EndpointSlice lists the 3 pod IPs behind the Service - kube-proxy programs
+
+# the virtual IP to balance across exactly these.
+
+# --- port-forward: the local-dev door (tunnels through the API server) ---
+$ kubectl port-forward service/nginx 18080:80 -n lab  (backgrounded, pid 1867383)
+
+$ curl -sS --retry 15 --retry-delay 1 --retry-connrefused http://localhost:18080/
+<html><body>
+<h1>k8s-toolhive-lab</h1>
+<p>Served by nginx from a ConfigMap-mounted index.html.</p>
+</body></html>
+
+# That HTML came from the ConfigMap, through the Service, through the tunnel.
+
+# NodePort 30080 is bound on the kind node CONTAINER (172.18.0.2) - reachable from
+
+# the Docker network, not from this Windows host; port-forward is the local path.
+
+# --- Pod-to-pod networking + cross-namespace DNS ---
+
+$ kubectl apply -f manifests/20-client-pod.yaml
+pod/client created
+
+$ kubectl wait --for=condition=Ready pod/client -n lab-b --timeout=120s
+pod/client condition met
+
+# client pod in lab-b curls nginx in lab through the Service DNS name:
+
+$ kubectl exec -n lab-b client -- wget -qO- http://nginx.lab.svc.cluster.local
+<html><body>
+<h1>k8s-toolhive-lab</h1>
+<p>Served by nginx from a ConfigMap-mounted index.html.</p>
+</body></html>
+
+# Short name WITHOUT namespace resolves only inside the same namespace:
+$ kubectl exec -n lab-b client -- wget -qO- -T 3 http://nginx  (expected to FAIL)
+wget: bad address 'nginx'
+command terminated with exit code 1
+FAILED AS EXPECTED: 'nginx' alone means nginx.lab-b, which does not exist
+
+# LESSON: namespaces isolate OBJECTS hard (secrets, names) but the pod network is
+
+# flat and open by default - cross-namespace traffic flows unless a NetworkPolicy
+
+# (with a policy-enforcing CNI - kind's default kindnet does NOT enforce) blocks it.
+
+# --- Secret consumption + the isolation asymmetry ---
+
+$ kubectl exec -n lab-b client -- printenv DEMO_API_KEY
+not-a-real-key-just-plumbing
+
+# That value came from lab-b's COPY of the secret. The original in 'lab' is
+
+# invisible to this pod - deleting lab-b's copy breaks it, lab's copy is irrelevant.
+
+# --- Resource requests vs limits: scheduler math vs cgroup ceiling ---
+
+$ kubectl describe node toolhive-lab-control-plane
+Name:               toolhive-lab-control-plane
+Roles:              control-plane
+Labels:             beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    kubernetes.io/arch=amd64
+                    kubernetes.io/hostname=toolhive-lab-control-plane
+                    kubernetes.io/os=linux
+                    node-role.kubernetes.io/control-plane=
+Annotations:        node.alpha.kubernetes.io/ttl: 0
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Sun, 02 Aug 2026 04:46:45 -0700
+Taints:             <none>
+Unschedulable:      false
+Lease:
+  HolderIdentity:  toolhive-lab-control-plane
+  AcquireTime:     <unset>
+  RenewTime:       Sun, 02 Aug 2026 04:56:29 -0700
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Sun, 02 Aug 2026 04:56:19 -0700   Sun, 02 Aug 2026 04:46:45 -0700   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Sun, 02 Aug 2026 04:56:19 -0700   Sun, 02 Aug 2026 04:46:45 -0700   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Sun, 02 Aug 2026 04:56:19 -0700   Sun, 02 Aug 2026 04:46:45 -0700   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Sun, 02 Aug 2026 04:56:19 -0700   Sun, 02 Aug 2026 04:47:05 -0700   KubeletReady                 kubelet is posting ready status
+Addresses:
+  InternalIP:  172.18.0.2
+  Hostname:    toolhive-lab-control-plane
+Capacity:
+  cpu:                24
+  ephemeral-storage:  1055762868Ki
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             48961660Ki
+  pods:               110
+Allocatable:
+  cpu:                24
+  ephemeral-storage:  1055762868Ki
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             48961660Ki
+  pods:               110
+System Info:
+  Machine ID:                 986c8832a0744aa596888a745c8eda2c
+  System UUID:                986c8832a0744aa596888a745c8eda2c
+  Boot ID:                    8265f646-01fb-444f-a11c-5d2df802bfd4
+  Kernel Version:             6.6.87.2-microsoft-standard-WSL2
+  OS Image:                   Debian GNU/Linux 13 (trixie)
+  Operating System:           linux
+  Architecture:               amd64
+  Container Runtime Version:  containerd://2.3.1
+  Kubelet Version:            v1.36.1
+PodCIDR:                      10.244.0.0/24
+PodCIDRs:                     10.244.0.0/24
+ProviderID:                   kind://docker/toolhive-lab/toolhive-lab-control-plane
+Non-terminated Pods:          (13 in total)
+  Namespace                   Name                                                  CPU Requests  CPU Limits  Memory Requests  Memory Limits  Age
+  ---------                   ----                                                  ------------  ----------  ---------------  -------------  ---
+  kube-system                 coredns-589f44dc88-ds5jq                              100m (0%)     0 (0%)      70Mi (0%)        170Mi (0%)     9m41s
+  kube-system                 coredns-589f44dc88-tqz7c                              100m (0%)     0 (0%)      70Mi (0%)        170Mi (0%)     9m41s
+  kube-system                 etcd-toolhive-lab-control-plane                       100m (0%)     0 (0%)      100Mi (0%)       0 (0%)         9m48s
+  kube-system                 kindnet-4r7fp                                         100m (0%)     100m (0%)   50Mi (0%)        50Mi (0%)      9m41s
+  kube-system                 kube-apiserver-toolhive-lab-control-plane             250m (1%)     0 (0%)      0 (0%)           0 (0%)         9m48s
+  kube-system                 kube-controller-manager-toolhive-lab-control-plane    200m (0%)     0 (0%)      0 (0%)           0 (0%)         9m48s
+  kube-system                 kube-proxy-8x8tr                                      0 (0%)        0 (0%)      0 (0%)           0 (0%)         9m41s
+  kube-system                 kube-scheduler-toolhive-lab-control-plane             100m (0%)     0 (0%)      0 (0%)           0 (0%)         9m48s
+  lab-b                       client                                                10m (0%)      100m (0%)   16Mi (0%)        64Mi (0%)      26s
+  lab                         nginx-6d87b45d7f-b2r75                                50m (0%)      250m (1%)   32Mi (0%)        128Mi (0%)     57s
+  lab                         nginx-6d87b45d7f-b8lm8                                50m (0%)      250m (1%)   32Mi (0%)        128Mi (0%)     71s
+  lab                         nginx-6d87b45d7f-nh959                                50m (0%)      250m (1%)   32Mi (0%)        128Mi (0%)     57s
+  local-path-storage          local-path-provisioner-855c7b7774-qzq48               0 (0%)        0 (0%)      0 (0%)           0 (0%)         9m41s
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests    Limits
+  --------           --------    ------
+  cpu                1110m (4%)  950m (3%)
+  memory             402Mi (0%)  838Mi (1%)
+  ephemeral-storage  0 (0%)      0 (0%)
+  hugepages-1Gi      0 (0%)      0 (0%)
+  hugepages-2Mi      0 (0%)      0 (0%)
+Events:
+  Type    Reason          Age    From             Message
+  ----    ------          ----   ----             -------
+  Normal  RegisteredNode  9m42s  node-controller  Node toolhive-lab-control-plane event: Registered Node toolhive-lab-control-plane in Controller
+
+# (see 'Allocated resources' above: requests drive scheduling; limits cap usage)
+
+# kubectl top is unavailable here on purpose: kind ships no metrics-server by default.
+
+# === PHASE 2 COMPLETE ===

@@ -1,0 +1,38 @@
+# MCPServer custom resource: ToolHive's operator turns this into a proxy pod +
+# a StatefulSet running the MCP server, attached over stdio via SPDY streams.
+#
+# The image is NOT from a registry: the ToolHive operator cannot run npx://
+# protocol schemes (CLI-only feature), so the supported bridge is:
+#   thv build npx://@addiplus/vercel-deployment-mcp -t vercel-deployment-mcp:0.2.0
+#   kind load docker-image vercel-deployment-mcp:0.2.0 --name toolhive-lab
+# and imagePullPolicy: IfNotPresent below so the node uses the loaded image.
+#
+# VERCEL_TOKEN comes from a Kubernetes Secret carrying a DUMMY value on purpose:
+# the server process, MCP handshake, and tools/list prove out without real
+# credentials; actual tool calls will fail Vercel auth (expected + documented).
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: MCPServer
+metadata:
+  name: vercel-deployment
+  namespace: toolhive-system
+spec:
+  image: vercel-deployment-mcp:0.2.0
+  transport: stdio
+  proxyMode: streamable-http   # proxy serves MCP at /mcp
+  proxyPort: 8080
+  secrets:
+    - name: vercel-token
+      key: token
+      targetEnvName: VERCEL_TOKEN
+  podTemplateSpec:
+    spec:
+      containers:
+        - name: mcp            # ToolHive requires exactly this container name
+          imagePullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
