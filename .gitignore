@@ -1,0 +1,5 @@
+# local tool binaries (downloaded during the lab, not repo content)
+bin/
+# live kubeconfig (contains cluster client keys - regenerated per cluster)
+.kube/
+*.zip
