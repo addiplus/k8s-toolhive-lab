@@ -1,0 +1,17 @@
+# Service (ClusterIP) = stable virtual IP + DNS name in front of whatever pods
+# match the selector. Pods are cattle; the Service name is the contract.
+# In-cluster DNS: nginx.lab.svc.cluster.local
+# Docker analogy: user-defined network DNS ("container name resolves"), but
+# with load-balancing across replicas and an IP that survives pod churn.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: lab
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80

@@ -1,0 +1,13 @@
+# Namespaces are Kubernetes' isolation boundary for NAMES and OBJECTS:
+# every namespaced resource (pods, services, secrets...) lives in exactly one.
+# Two namespaces here so we can demonstrate cross-namespace DNS and what
+# namespace isolation does (and does NOT) give you by default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-b

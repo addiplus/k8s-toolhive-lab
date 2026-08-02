@@ -1,0 +1,15 @@
+# ConfigMap = non-secret configuration as a first-class object.
+# Docker analogy: instead of baking a file into the image or bind-mounting a
+# host path, the cluster stores the file content and mounts it into any pod
+# that asks. Change the ConfigMap -> restart pods -> new config, no rebuild.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-index
+  namespace: lab
+data:
+  index.html: |
+    <html><body>
+    <h1>k8s-toolhive-lab</h1>
+    <p>Served by nginx from a ConfigMap-mounted index.html.</p>
+    </body></html>

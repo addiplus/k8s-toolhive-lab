@@ -1,0 +1,30 @@
+# A bare Pod (no Deployment) used as an in-cluster client to exercise
+# pod-to-pod networking: exec in, curl the nginx Service by DNS name.
+# Also consumes the demo Secret as an env var to show that mechanic.
+# Lives in the OTHER namespace (lab-b) on purpose: cross-namespace DNS
+# (nginx.lab.svc.cluster.local) works by default - namespaces isolate
+# names/objects, NOT the network, unless a NetworkPolicy + capable CNI
+# enforce it.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: lab-b
+spec:
+  containers:
+    - name: client
+      image: busybox:1.37
+      command: ["sleep", "infinity"]
+      env:
+        - name: DEMO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: demo-credentials-copy
+              key: DEMO_API_KEY
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
