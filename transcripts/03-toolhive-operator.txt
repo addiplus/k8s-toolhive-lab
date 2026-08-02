@@ -1,0 +1,294 @@
+
+# === PHASE 3a: ToolHive operator + MCPServer CR ===
+
+$ helm version
+version.BuildInfo{Version:"v4.2.3", GitCommit:"43e8b7feece8beb0fcba47059ec9b522fd929a64", GitTreeState:"clean", GoVersion:"go1.26.5", KubeClientVersion:"v1.36"}
+
+# Note: Helm 4 - ToolHive docs certify v3.10+; if OCI install misbehaves we fall back to Helm 3.
+
+# --- Operator install (two OCI charts: CRDs, then the operator) ---
+
+$ helm upgrade --install toolhive-operator-crds oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds -n toolhive-system --create-namespace
+Release "toolhive-operator-crds" does not exist. Installing it now.
+Pulled: ghcr.io/stacklok/toolhive/toolhive-operator-crds:0.41.0
+Digest: sha256:6293a550141ca7bc85a15f281742477d53bc3132654c53994cd9ca3bdf000e78
+NAME: toolhive-operator-crds
+LAST DEPLOYED: Sun Aug  2 05:07:03 2026
+NAMESPACE: toolhive-system
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE: None
+
+$ helm upgrade --install toolhive-operator oci://ghcr.io/stacklok/toolhive/toolhive-operator -n toolhive-system --create-namespace
+Release "toolhive-operator" does not exist. Installing it now.
+Pulled: ghcr.io/stacklok/toolhive/toolhive-operator:0.41.0
+Digest: sha256:f1a3147e5b16bd24da45150f93d1b9ebfcfa26ef62ef654734025b793c0fe570
+NAME: toolhive-operator
+LAST DEPLOYED: Sun Aug  2 05:07:08 2026
+NAMESPACE: toolhive-system
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE: None
+NOTES:
+Thank you for installing toolhive-operator!
+
+Release: toolhive-operator
+Namespace: toolhive-system
+Chart version: 0.41.0
+Operator version: 0.41.0
+
+The ToolHive Operator is being deployed. It watches ToolHive custom resources
+and reconciles MCP server workloads in your cluster.
+
+Learn more
+
+  Operator guide:
+    https://github.com/stacklok/toolhive/blob/main/docs/kind/deploying-mcp-server-with-operator.md
+
+  Example manifests:
+    https://github.com/stacklok/toolhive/tree/main/examples/operator
+
+  Documentation:
+    https://docs.stacklok.com/toolhive/
+
+# --- What did that install? ---
+$ kubectl get crd | grep toolhive
+embeddingservers.toolhive.stacklok.dev                     2026-08-02T12:07:03Z
+mcpauthzconfigs.toolhive.stacklok.dev                      2026-08-02T12:07:03Z
+mcpexternalauthconfigs.toolhive.stacklok.dev               2026-08-02T12:07:03Z
+mcpgroups.toolhive.stacklok.dev                            2026-08-02T12:07:03Z
+mcpoidcconfigs.toolhive.stacklok.dev                       2026-08-02T12:07:03Z
+mcpregistries.toolhive.stacklok.dev                        2026-08-02T12:07:03Z
+mcpremoteproxies.toolhive.stacklok.dev                     2026-08-02T12:07:03Z
+mcpserverentries.toolhive.stacklok.dev                     2026-08-02T12:07:03Z
+mcpservers.toolhive.stacklok.dev                           2026-08-02T12:07:03Z
+mcptelemetryconfigs.toolhive.stacklok.dev                  2026-08-02T12:07:03Z
+mcptoolconfigs.toolhive.stacklok.dev                       2026-08-02T12:07:03Z
+mcpwebhookconfigs.toolhive.stacklok.dev                    2026-08-02T12:07:03Z
+virtualmcpcompositetooldefinitions.toolhive.stacklok.dev   2026-08-02T12:07:03Z
+virtualmcpservers.toolhive.stacklok.dev                    2026-08-02T12:07:03Z
+
+$ kubectl -n toolhive-system get deployments
+NAME                READY   UP-TO-DATE   AVAILABLE   AGE
+toolhive-operator   0/1     1            0           9s
+
+$ kubectl wait --for=condition=Available deployment --all -n toolhive-system --timeout=300s
+deployment.apps/toolhive-operator condition met
+
+$ kubectl -n toolhive-system get pods
+NAME                                READY   STATUS    RESTARTS   AGE
+toolhive-operator-d489499f9-w9h6w   1/1     Running   0          17s
+
+# --- Build the npx package into a container image (operator can't run npx:// directly) ---
+
+$ thv version
+ToolHive v0.41.0
+Commit: d72230424efbafd89fb5faf1934126e266b439ae
+Built: 2026-07-28 17:14:45 UTC
+Go version: go1.26.5
+Platform: windows/amd64
+
+$ thv build npx://@addiplus/vercel-deployment-mcp -t vercel-deployment-mcp:0.2.0
+Step 1/16 : FROM node:24-alpine AS builder
+ ---> f70403e87646
+Step 2/16 : RUN apk add --no-cache git ca-certificates
+ ---> Running in d37a84fb61d7
+( 1/13) Installing ca-certificates (20260611-r0)
+( 2/13) Installing brotli-libs (1.2.0-r1)
+( 3/13) Installing c-ares (1.34.8-r0)
+( 4/13) Installing libunistring (1.4.2-r0)
+( 5/13) Installing libidn2 (2.3.8-r0)
+( 6/13) Installing nghttp2-libs (1.69.0-r0)
+( 7/13) Installing libpsl (0.21.5-r3)
+( 8/13) Installing zstd-libs (1.5.7-r2)
+( 9/13) Installing libcurl (8.21.0-r0)
+(10/13) Installing libexpat (2.8.2-r0)
+(11/13) Installing pcre2 (10.47-r1)
+(12/13) Installing git (2.54.0-r0)
+(13/13) Installing git-init-template (2.54.0-r0)
+Executing busybox-1.37.0-r31.trigger
+Executing ca-certificates-20260611-r0.trigger
+OK: 23.4 MiB in 31 packages
+ ---> Removed intermediate container d37a84fb61d7
+ ---> 42134c6e5ccd
+Step 3/16 : ENV NODE_ENV=production     NPM_CONFIG_LOGLEVEL=error     NPM_CONFIG_FUND=false     NPM_CONFIG_AUDIT=false     NPM_CONFIG_UPDATE_NOTIFIER=false     NPM_CONFIG_PROGRESS=false
+ ---> Running in 84acfa95cd1c
+ ---> Removed intermediate container 84acfa95cd1c
+ ---> 68981c43495b
+Step 4/16 : WORKDIR /build
+ ---> Running in a0243dc6689d
+ ---> Removed intermediate container a0243dc6689d
+ ---> 930bf9cf605f
+Step 5/16 : RUN echo '{"name":"mcp-container","version":"1.0.0"}' > package.json
+ ---> Running in 72f3db9796cf
+ ---> Removed intermediate container 72f3db9796cf
+ ---> 3e4883caa8ed
+Step 6/16 : RUN npm install --save @addiplus/vercel-deployment-mcp
+ ---> Running in 61b017fdbda4
+
+added 94 packages in 4s
+ ---> Removed intermediate container 61b017fdbda4
+ ---> dfcf490f43dd
+Step 7/16 : FROM node:24-alpine
+ ---> f70403e87646
+Step 8/16 : RUN apk add --no-cache git ca-certificates
+ ---> Using cache
+ ---> 42134c6e5ccd
+Step 9/16 : WORKDIR /app
+ ---> Running in edadcd496b30
+ ---> Removed intermediate container edadcd496b30
+ ---> f84f2306c763
+Step 10/16 : RUN addgroup -S appgroup &&     adduser -S appuser -G appgroup &&     mkdir -p /app &&     chown -R appuser:appgroup /app
+ ---> Running in 9a97b9547501
+ ---> Removed intermediate container 9a97b9547501
+ ---> 9b37c97b4f23
+Step 11/16 : COPY --from=builder --chown=appuser:appgroup /build/node_modules /app/node_modules
+ ---> 74ba76460dda
+Step 12/16 : COPY --from=builder --chown=appuser:appgroup /build/package.json /app/package.json
+ ---> d754b8ab6ed0
+Step 13/16 : COPY --from=builder --chown=appuser:appgroup /build/package-lock.json /app/package-lock.json
+ ---> 1a6dcbbae658
+Step 14/16 : ENV NODE_PATH=/app/node_modules     PATH=/app/node_modules/.bin:$PATH
+ ---> Running in 075f68c590b5
+ ---> Removed intermediate container 075f68c590b5
+ ---> 416955da01e1
+Step 15/16 : USER appuser
+ ---> Running in eef7d24d8aa7
+ ---> Removed intermediate container eef7d24d8aa7
+ ---> ed7521b0c777
+Step 16/16 : ENTRYPOINT ["npx", "@addiplus/vercel-deployment-mcp"]
+ ---> Running in 8d288cc57c2e
+ ---> Removed intermediate container 8d288cc57c2e
+ ---> 5a86d4b38293
+Successfully built 5a86d4b38293
+Successfully tagged vercel-deployment-mcp:0.2.0
+{"time":"2026-08-02T05:07:59-07:00","level":"INFO","msg":"Successfully built container image: vercel-deployment-mcp:0.2.0"}
+$ docker images vercel-deployment-mcp
+IMAGE                         ID             DISK USAGE   CONTENT SIZE   EXTRA
+vercel-deployment-mcp:0.2.0   5a86d4b38293        283MB         67.7MB        
+
+# --- Load the local image into the kind node (nodes cannot see the host daemon's images) ---
+
+$ kind load docker-image vercel-deployment-mcp:0.2.0 --name toolhive-lab
+Image: "vercel-deployment-mcp:0.2.0" with ID "sha256:5a86d4b38293a31377dc0ba6bce8dfaa21780b2745c09397f52e0c2e65954bd5" not yet present on node "toolhive-lab-control-plane", loading...
+
+# --- Secret for VERCEL_TOKEN: DUMMY value, on purpose (handshake proves out; real API calls will fail auth) ---
+$ kubectl -n toolhive-system create secret generic vercel-token --from-literal=token=DUMMY ...
+secret/vercel-token created
+
+# --- Create the MCPServer custom resource ---
+
+$ kubectl apply -f manifests/30-vercel-mcpserver.yaml
+mcpserver.toolhive.stacklok.dev/vercel-deployment created
+
+$ kubectl get mcpservers -n toolhive-system
+NAME                STATUS    READY   REPLICAS   URL                                                                             AGE
+vercel-deployment   Pending   False              http://mcp-vercel-deployment-proxy.toolhive-system.svc.cluster.local:8080/mcp   4s
+
+# --- Give the operator a moment, then inspect EVERYTHING it created ---
+error: timed out waiting for the condition on mcpservers/vercel-deployment
+mcpserver.toolhive.stacklok.dev/vercel-deployment condition met
+
+$ kubectl get mcpservers -n toolhive-system -o wide
+NAME                STATUS   READY   REPLICAS   URL                                                                             AGE
+vercel-deployment   Ready    True    1          http://mcp-vercel-deployment-proxy.toolhive-system.svc.cluster.local:8080/mcp   3m14s
+
+$ kubectl get all -n toolhive-system
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/toolhive-operator-d489499f9-w9h6w    1/1     Running   0          4m35s
+pod/vercel-deployment-0                  1/1     Running   0          3m10s
+pod/vercel-deployment-6558cf8854-4htgj   1/1     Running   0          3m15s
+
+NAME                                  TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/mcp-vercel-deployment-proxy   ClusterIP   10.96.193.85   <none>        8080/TCP   3m14s
+
+NAME                                READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/toolhive-operator   1/1     1            1           4m36s
+deployment.apps/vercel-deployment   1/1     1            1           3m16s
+
+NAME                                           DESIRED   CURRENT   READY   AGE
+replicaset.apps/toolhive-operator-d489499f9    1         1         1       4m36s
+replicaset.apps/vercel-deployment-6558cf8854   1         1         1       3m16s
+
+NAME                                 READY   AGE
+statefulset.apps/vercel-deployment   1/1     3m11s
+
+$ kubectl describe mcpserver vercel-deployment -n toolhive-system
+Name:         vercel-deployment
+Namespace:    toolhive-system
+Labels:       <none>
+Annotations:  <none>
+API Version:  toolhive.stacklok.dev/v1beta1
+Kind:         MCPServer
+Metadata:
+  Creation Timestamp:  2026-08-02T12:08:28Z
+  Finalizers:
+    mcpserver.toolhive.stacklok.dev/finalizer
+  Generation:        1
+  Resource Version:  2623
+  UID:               3e42edf3-a2bd-44ef-a0a7-37748b5dd058
+Spec:
+  Image:  vercel-deployment-mcp:0.2.0
+  Pod Template Spec:
+    Spec:
+      Containers:
+        Image Pull Policy:  IfNotPresent
+        Name:               mcp
+  Proxy Mode:               streamable-http
+  Proxy Port:               8080
+  Resources:
+    Limits:
+      Cpu:     200m
+      Memory:  256Mi
+    Requests:
+      Cpu:     50m
+      Memory:  64Mi
+  Secrets:
+    Key:                token
+    Name:               vercel-token
+    Target Env Name:    VERCEL_TOKEN
+  Session Affinity:     ClientIP
+  Transport:            stdio
+  Trust Proxy Headers:  false
+Status:
+  Conditions:
+    Last Transition Time:  2026-08-02T12:08:28Z
+    Message:               stdio replica cap is not active
+    Observed Generation:   1
+    Reason:                StdioReplicaCapNotActive
+    Status:                False
+    Type:                  StdioReplicaCapped
+    Last Transition Time:  2026-08-02T12:08:28Z
+    Message:               session storage warning is not active
+    Observed Generation:   1
+    Reason:                SessionStorageWarningNotApplicable
+    Status:                False
+    Type:                  SessionStorageWarning
+    Last Transition Time:  2026-08-02T12:08:28Z
+    Message:               rate limiting is not configured
+    Observed Generation:   1
+    Reason:                RateLimitNotApplicable
+    Status:                True
+    Type:                  RateLimitConfigValid
+    Last Transition Time:  2026-08-02T12:08:28Z
+    Message:               PodTemplateSpec is valid
+    Observed Generation:   1
+    Reason:                ValidPodTemplateSpec
+    Status:                True
+    Type:                  PodTemplateValid
+    Last Transition Time:  2026-08-02T12:08:40Z
+    Message:               MCP server is running
+    Observed Generation:   1
+    Reason:                Ready
+    Status:                True
+    Type:                  Ready
+  Message:                 MCP server is running
+  Observed Generation:     1
+  Phase:                   Ready
+  Ready Replicas:          1
+  URL:                     http://mcp-vercel-deployment-proxy.toolhive-system.svc.cluster.local:8080/mcp
+Events:                    <none>
+
+# === PHASE 3a COMPLETE (see 03b for the MCP handshake) ===

@@ -1,0 +1,35 @@
+# STRETCH GOAL: a SECOND MCPServer instance - Stacklok's packaged reference
+# server (registry image this time, not a local build), streamable-http
+# transport (no stdio bridging needed). Two isolated MCP servers, two distinct
+# proxy Services, one operator - which is precisely the "run MANY MCP servers
+# safely" operating model ToolHive exists for.
+#
+# podTemplateSpec volumes: the reference image needs a writable /tmp under the
+# operator's read-only root filesystem (pattern from Stacklok's own quickstart).
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: MCPServer
+metadata:
+  name: toolhive-docs
+  namespace: toolhive-system
+spec:
+  image: ghcr.io/stackloklabs/toolhive-doc-mcp
+  transport: streamable-http
+  proxyPort: 8080
+  mcpPort: 8080
+  podTemplateSpec:
+    spec:
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: mcp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
