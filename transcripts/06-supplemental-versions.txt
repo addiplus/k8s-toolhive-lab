@@ -1,0 +1,27 @@
+# Supplemental version receipts (post-session capture, 2026-08-02)
+# Captured AFTER the lab session and a machine reboot, on the same machine, using the
+# same downloaded binaries in bin/ (gitignored). Purpose: close the C1 evidence gap
+# flagged in external adversarial review (exact kind/Docker qualifiers were prose-only)
+# and commit a registry receipt for the registry-listed claim. Honest label: this is a
+# supplemental capture, not part of the original session transcripts 01-05.
+
+$ bin/kind.exe version
+kind v0.32.0 go1.26.3 windows/amd64
+
+$ docker version   # Docker Desktop daemon NOT running post-reboot; client version only
+Client:
+ Version:           29.6.2
+ API version:       1.55
+ Go version:        go1.26.5
+ Git commit:        dfc4efb
+ Built:             Thu Jul 16 16:14:59 2026
+ OS/Arch:           windows/amd64
+ Context:           desktop-linux
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+
+$ cat 'C:/Program Files/Docker/Docker/componentsVersion.json'
+(file not present at this path)
+
+$ curl -s 'https://registry.modelcontextprotocol.io/v0/servers?search=io.github.addiplus/vercel-deployment-mcp'
+{"servers":[{"server":{"$schema":"https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json","name":"io.github.addiplus/vercel-deployment-mcp","description":"Reference MCP stdio server for observing Vercel projects and deployments.","repository":{"url":"https://github.com/addiplus/vercel-deployment-mcp","source":"github","id":"1253261003"},"version":"0.1.0","packages":[{"registryType":"npm","registryBaseUrl":"https://registry.npmjs.org","identifier":"@addiplus/vercel-deployment-mcp","version":"0.1.0","transport":{"type":"stdio"},"environmentVariables":[{"description":"Vercel API access token used to read project and deployment information. Create one at https://vercel.com/account/tokens.","isRequired":true,"isSecret":true,"name":"VERCEL_TOKEN"},{"description":"Optional Vercel team (scope) identifier. Set this when the token belongs to a team so requests target the correct team scope.","name":"VERCEL_TEAM_ID"}]}]},"_meta":{"io.modelcontextprotocol.registry/official":{"status":"active","statusChangedAt":"2026-07-09T19:50:30.692136Z","publishedAt":"2026-07-09T19:50:30.692136Z","updatedAt":"2026-07-09T19:50:30.692136Z","isLatest":false}}},{"server":{"$schema":"https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json","name":"io.github.addiplus/vercel-deployment-mcp","description":"Reference MCP stdio server for observing Vercel projects and deployments.","repository":{"url":"https://github.com/addiplus/vercel-deployment-mcp","source":"github","id":"1253261003"},"version":"0.2.0","packages":[{"registryType":"npm","registryBaseUrl":"https://registry.npmjs.org","identifier":"@addiplus/vercel-deployment-mcp","version":"0.2.0","transport":{"type":"stdio"},"environmentVariables":[{"description":"Vercel API access token used to read project and deployment information. Create one at https://vercel.com/account/tokens.","isRequired":true,"isSecret":true,"name":"VERCEL_TOKEN"},{"description":"Optional Vercel team (scope) identifier. Set this when the token belongs to a team so requests target the correct team scope.","name":"VERCEL_TEAM_ID"}]}]},"_meta":{"io.modelcontextprotocol.registry/official":{"status":"active","statusChangedAt":"2026-07-11T02:25:00.018742Z","publishedAt":"2026-07-11T02:25:00.018742Z","updatedAt":"2026-07-11T02:25:00.018742Z","isLatest":true}}}],"metadata":{"count":2}}
+
